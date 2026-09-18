@@ -1,162 +1,73 @@
-# GridWise LLM Energy Optimizer
+Viewed main.py:1-9
 
-A complete local implementation of the BUP CSE Fest 2026 preliminary API: natural-language operator notes become validated constraints, then a linear program finds the minimum-cost 24-hour battery/grid/solar schedule.
+Step-by-step to run the project:
 
-**Free model:** Qwen3 4B Instruct (`qwen3:4b-instruct`) through local Ollama. No paid API, account, token, or cloud subscription is required. Initial setup downloads approximately 2.5 GB of model weights plus the runtime. Model inference uses your computer; keep it running while serving requests.
-
-## Quickstart on this Windows computer
-
-The project-local Python environment, portable Ollama runtime, and `.env` are configured here. From this project directory:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/start-local.ps1
-```
-
-The launcher starts Ollama in the background if necessary, ensures the model is downloaded, warms inference, and runs the API. Subsequent starts can use `-SkipPull`. Open **http://127.0.0.1:8000/docs** for an interactive API explorer. The API binds to `0.0.0.0:8000`; Ollama stays on loopback `127.0.0.1:11434`.
-
-Press Ctrl+C to stop the foreground API. Ollama remains available in the background; its process ID is recorded in `.local/ollama.pid` when this launcher starts it. Do not stop an unrelated Ollama instance.
-
-## Clean Windows setup
-
-Prerequisite: 64-bit Python 3.12 or later with pip. Clone this repository using its actual repository URL, then run the following in its directory:
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.lock.txt
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-Copy-Item .env.example .env
-powershell -ExecutionPolicy Bypass -File scripts/start-local.ps1
-```
-
-`scripts/install_ollama.py` installs the pinned official Windows Ollama 0.34.2 CPU/Vulkan components in `.local/ollama`. It retrieves the relevant tail of the official ZIP and validates each extracted entry with ZIP CRC checks. This avoids downloading unused CUDA libraries. Vulkan provides GPU inference on the tested GTX 1650. It does not change your system PATH or install a Windows service. If the download is interrupted, rerun the launcher. Model pulls resume through Ollama.
-
-## Linux/macOS or an existing Ollama installation
-
-Install Ollama using the [official installation instructions](https://docs.ollama.com/quickstart). Start `ollama serve` in one terminal if it is not already running, then:
-
-```sh
-ollama pull qwen3:4b-instruct
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r requirements.lock.txt
+### 1. Set up .env
 cp .env.example .env
-python scripts/warm_model.py
+
+Then edit .env and add your Groq API key:
+GROQ_API_KEY=gsk_your_key_here
+
+
+### 2. Install dependencies
+pip install -r requirements.txt
+
+
+### 3. Run the server
 python -m gridwise
-```
 
-These platforms have configuration support, but local verification was performed on Windows. The native Windows launcher deliberately uses the pinned default model; for a custom model, set `.env`, pull it yourself, and run `python scripts/warm_model.py` followed by `python -m gridwise`.
+Server starts at http://localhost:8000
 
-## Call the API
+---
 
-Health returns HTTP 200 and exactly `{"status":"ok"}` when Ollama is reachable and the configured model is installed. Otherwise it returns 503 `{"status":"not_ready"}`. Warm the model before timed judging requests.
+### 4. Test it — send a request
+curl -s -X POST http://localhost:8000/optimize-energy \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scenario_id": "test-01",
+    "operator_notes": [
+      "Solar output will drop to about 20% from 1 PM to 3 PM.",
+      "Do not charge the battery between 2 PM and 4 PM.",
+      "The cafeteria menu changes tomorrow."
+    ],
+    "hours": [
+      {"hour": 0, "demand_kwh": 50, "solar_kwh": 0, "tariff_bdt_per_kwh": 8},
+      {"hour": 1, "demand_kwh": 45, "solar_kwh": 0, "tariff_bdt_per_kwh": 8},
+      {"hour": 2, "demand_kwh": 42, "solar_kwh": 0, "tariff_bdt_per_kwh": 8},
+      {"hour": 3, "demand_kwh": 40, "solar_kwh": 0, "tariff_bdt_per_kwh": 8},
+      {"hour": 4, "demand_kwh": 41, "solar_kwh": 0, "tariff_bdt_per_kwh": 8},
+      {"hour": 5, "demand_kwh": 43, "solar_kwh": 0, "tariff_bdt_per_kwh": 8},
+      {"hour": 6, "demand_kwh": 60, "solar_kwh": 10, "tariff_bdt_per_kwh": 10},
+      {"hour": 7, "demand_kwh": 75, "solar_kwh": 30, "tariff_bdt_per_kwh": 10},
+      {"hour": 8, "demand_kwh": 90, "solar_kwh": 60, "tariff_bdt_per_kwh": 12},
+      {"hour": 9, "demand_kwh": 100, "solar_kwh": 90, "tariff_bdt_per_kwh": 12},
+      {"hour": 10, "demand_kwh": 110, "solar_kwh": 110, "tariff_bdt_per_kwh": 15},
+      {"hour": 11, "demand_kwh": 115, "solar_kwh": 120, "tariff_bdt_per_kwh": 15},
+      {"hour": 12, "demand_kwh": 120, "solar_kwh": 125, "tariff_bdt_per_kwh": 15},
+      {"hour": 13, "demand_kwh": 118, "solar_kwh": 120, "tariff_bdt_per_kwh": 18},
+      {"hour": 14, "demand_kwh": 115, "solar_kwh": 100, "tariff_bdt_per_kwh": 18},
+      {"hour": 15, "demand_kwh": 110, "solar_kwh": 80, "tariff_bdt_per_kwh": 18},
+      {"hour": 16, "demand_kwh": 105, "solar_kwh": 50, "tariff_bdt_per_kwh": 20},
+      {"hour": 17, "demand_kwh": 100, "solar_kwh": 20, "tariff_bdt_per_kwh": 20},
+      {"hour": 18, "demand_kwh": 95, "solar_kwh": 5, "tariff_bdt_per_kwh": 20},
+      {"hour": 19, "demand_kwh": 90, "solar_kwh": 0, "tariff_bdt_per_kwh": 18},
+      {"hour": 20, "demand_kwh": 85, "solar_kwh": 0, "tariff_bdt_per_kwh": 15},
+      {"hour": 21, "demand_kwh": 75, "solar_kwh": 0, "tariff_bdt_per_kwh": 12},
+      {"hour": 22, "demand_kwh": 60, "solar_kwh": 0, "tariff_bdt_per_kwh": 10},
+      {"hour": 23, "demand_kwh": 50, "solar_kwh": 0, "tariff_bdt_per_kwh": 8}
+    ],
+    "battery": {
+      "capacity_kwh": 500,
+      "initial_energy_kwh": 200,
+      "minimum_energy_kwh": 50,
+      "max_charge_kwh_per_hour": 100,
+      "max_discharge_kwh_per_hour": 100
+    }
+  }' | python -m json.tool
 
-```powershell
-curl.exe http://127.0.0.1:8000/health
-.\.venv\Scripts\python.exe scripts/export_sample.py
-curl.exe -X POST http://127.0.0.1:8000/optimize-energy -H "Content-Type: application/json" --data-binary "@examples/sample-request.json"
-```
 
-On Linux/macOS replace `curl.exe` with `curl` and the Python path with `python`. The example uses the first supplied public case. Successful output includes:
-
-- `scenario_id`, echoed from the request;
-- `directive_interpretation`, one entry per note in order;
-- `hourly_plan`, exactly 24 rows with grid, used solar, battery action/magnitude, and final hourly battery state;
-- `total_grid_kwh`, `total_cost_bdt`, `peak_grid_kwh`, and `plan_summary`.
-
-A valid response may differ from the reference schedule while having the same cost. For SAMPLE-01 the reference optimum is **38,365 BDT**.
-
-Malformed JSON and invalid request schemas return 400. Infeasible interpreted constraints return 422. Provider failures, malformed model outputs, and internal verification failures return controlled 500 errors without exposing provider bodies, input values, keys, or stack traces.
-
-## Tests
-
-Offline tests do not require Ollama. They inject supplied interpretation fixtures to test the API, optimizer, replay, and error paths. They are deliberately **not** evidence of real-model language understanding.
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-The suite covers all ten public optimal costs, every supported directive, malformed requests/model outputs, provider failures, zero-capacity batteries, solar curtailment, 100 randomized fractional cases, 30 small cases compared with a separate dynamic-programming solver, and concurrent calls.
-
-With the real model and API running:
-
-```powershell
-.\.venv\Scripts\python.exe scripts/check_samples.py
-```
-
-This sends every supplied case through the actual HTTP endpoint and model. It compares structured interpretations (excluding explanation wording), independently replays schedules against organizer directives, checks cost against the reference optimum, and records latency. Results are written to `test-results/live-samples.json`; any failure gives a nonzero exit code. For 15 additional language variations, run `python scripts/check_samples.py --cases tests/paraphrases.json --output test-results/paraphrases.json`. A repeated run benefits from the interpretation cache. Use a fresh API process to measure uncached inference.
-
-See [verification.md](docs/verification.md) for actual results and unresolved deployment checks.
-
-## Architecture and optimizer
-
-```text
-POST /optimize-energy
-  -> strict Pydantic request validation
-  -> Qwen3 through local Ollama (JSON schema constrained generation)
-  -> deterministic directive guards
-  -> SciPy / HiGHS linear program
-  -> independent schedule replay
-  -> typed response
-```
-
-The LLM receives only the notes and battery capacity. It directly generates the directives used by the optimizer. There is no regex interpreter, hard-coded public-case lookup, fixture configuration, or silent no-op fallback in the production path. Notes are treated as untrusted data. Model output must match exact allowed shapes, finite numeric ranges, note coverage/order, applies semantics, and sorted unique hours.
-
-The LP has 96 continuous variables: grid import, solar used, signed battery flow, and battery state for each of 24 hours. Grid cost is the objective. A single signed battery flow represents charge or discharge, so simultaneous actions cannot occur. Constraints enforce energy balance, battery state transitions, capacity, minimum reserves, hourly rates, directive windows, and final energy equal to initial energy. Solar can be curtailed; grid export is prohibited. This formulation is exact for the stated lossless battery model, with no state discretization or greedy approximation.
-
-All directives apply before solving. Reserve overlaps use the highest minimum, grid-cap overlaps use the lowest cap, and prohibited action windows are combined. The specification does not explicitly define overlapping solar reductions; this implementation treats each as a bound relative to original solar and applies the lowest remaining fraction, not compounded reductions. This interpretation follows the stated `original_solar * factor` rule; organizer clarification would take precedence.
-
-A stable single solver worker avoids native scheduler races across HTTP threads. Each solve has a 3-second solver limit. All model waiting/retries share a 25-second deadline, leaving time within the 30-second API budget. Replay verifies every energy equation, directive, state transition, total, and end-of-day neutrality before responding. API responses preserve floating-point precision rather than rounding each hour and accumulating errors.
-
-## Configuration
-
-`.env` is local and ignored by Git. Defaults require no secrets.
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `LLM_BASE_URL` | `http://127.0.0.1:11434` | Native Ollama API root |
-| `LLM_MODEL` | `qwen3:4b-instruct` | Installed local generative model |
-| `LLM_TIMEOUT_SECONDS` | `24` | Per-attempt HTTP timeout, at most 24 seconds |
-| `LLM_ATTEMPTS` | `1` | 1 or 2 attempts within the overall deadline |
-| `LLM_CONCURRENCY` | `1` | Concurrent inference requests; 1 fits this GPU |
-| `LLM_CACHE_SIZE` | `256` | Bounded in-memory cache; 0 disables caching |
-| `PORT` | `8000` | Public API listening port |
-
-The cache key includes the exact note list and battery capacity, so percentage reserves cannot leak across different battery sizes. It stores only validated model interpretations, never schedules; each scenario is optimized independently. Cache contents are lost on restart. The launcher sets `OLLAMA_MODELS` to `.local/models` and enables Vulkan. Runtime/model files and logs are excluded from Git and the Docker build.
-
-## Docker fallback
-
-Dockerfiles and Compose configuration are included. Docker is not installed on the development machine, so container build/run has not been verified here. Do not label the fallback image tested or pullable until the following steps succeed on a Docker host.
-
-```sh
-docker compose up --build -d
+### 5. Health check
 curl http://localhost:8000/health
-python scripts/check_samples.py --url http://localhost:8000
-```
 
-Compose runs Ollama, a model-download initialization job, and the API. Model weights persist in a named volume. The default Compose setup uses CPU inference; performance depends on the host. Configure GPU access on a GPU-capable Docker host for judging latency. The API container runs as a non-root user, binds to `0.0.0.0`, exposes port 8000, and includes a health check. It contains no model credentials or local `.env`.
 
-For a host with an already running Ollama server:
-
-```sh
-docker build -t gridwise:1.0.0 .
-docker run --rm -p 8000:8000 --add-host=host.docker.internal:host-gateway -e LLM_BASE_URL=http://host.docker.internal:11434 -e LLM_MODEL=qwen3:4b-instruct gridwise:1.0.0
-```
-
-Ollama must be reachable from the container; loopback-only binding on the host will not suffice on every platform. The Compose network avoids this issue. To submit a fallback image, publish the tested image to your chosen registry and record its actual immutable digest. No registry image or fabricated pull URL is supplied in this repository.
-
-## Submission status and limitations
-
-- Local source, configuration, automated tests, free LLM setup, and launch scripts are included.
-- A localhost API is not a public judge endpoint. Public hosting, registry publication, repository visibility changes, and contest submission have not been performed.
-- Docker execution needs a Docker host. A Dockerfile alone does not prove a working fallback image.
-- [video-script.md](docs/video-script.md) is a three-minute walkthrough script, not a recorded video.
-- The language model is fallible; strict guards validate shape/ranges, not semantic truth. Real public cases and paraphrases should be checked before judging.
-- Cold model loads and concurrent uncached requests can exceed latency targets on slower hardware. The launcher warms the model; keep the computer awake and the model resident during evaluation.
-- Input energy values and tariffs must be finite and nonnegative, and the battery must satisfy `minimum <= initial <= capacity`. Hour entries may arrive in any order and are sorted. Unsupported extra fields are rejected.
-- Losses, battery degradation, demand shifting, negative tariffs, and grid export are outside this implementation's challenge model.
-
-## Dependencies and credits
-
-Python, FastAPI/Starlette/Uvicorn (HTTP service), Pydantic (validation), SciPy/HiGHS and NumPy (optimization), HTTPX (Ollama transport/tests), python-dotenv (configuration), and pytest (tests). Exact installed runtime dependencies are recorded in `requirements.lock.txt`. The supplied challenge PDFs and public samples are organizer materials. Development used an AI coding assistant; no external solution repository was copied.
-
-Model/runtime references: [Qwen3 4B Instruct](https://ollama.com/library/qwen3:4b-instruct), [Ollama Windows runtime](https://docs.ollama.com/windows), and [Ollama chat API](https://docs.ollama.com/api/chat). Qwen3's published model license is Apache 2.0; preserve upstream licenses when redistributing model or runtime files.
+---
