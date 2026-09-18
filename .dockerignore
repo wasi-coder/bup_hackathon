@@ -1,8 +1,6 @@
 *
 !requirements.txt
-!requirements.lock.txt
-!gridwise/
-!gridwise/**
-!scripts/
-!scripts/warm_model.py
-gridwise/**/__pycache__/
+!src/
+!src/**
+!start.py
+src/**/__pycache__/

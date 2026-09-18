@@ -1,10 +1,8 @@
 import json
 import os
-from typing import Literal, Optional
 
 from dotenv import load_dotenv  # type: ignore
 from groq import AsyncGroq  # type: ignore
-from pydantic import BaseModel, Field
 
 from .models import Interpretation, Scenario, validate_directives
 
@@ -25,41 +23,8 @@ class ModelError(Exception):
     """Raised when the LLM fails to return valid directives after all attempts."""
 
 
-# ---------------------------------------------------------------------------
-# Pydantic output schema — injected into SYSTEM_PROMPT so the LLM always
-# produces a response matching the exact validated structure.
-# ---------------------------------------------------------------------------
-
-class StructuredAdjustment(BaseModel):
-    hours: list[int] = Field(description="Affected hours 0-23, start-inclusive end-exclusive")
-    factor: Optional[float] = Field(default=None, description="Remaining solar fraction 0.0-1.0 (solar_reduction only)")
-    minimum_energy_kwh: Optional[float] = Field(default=None, description="Minimum battery kWh (minimum_battery_reserve only)")
-    max_grid_kwh: Optional[float] = Field(default=None, description="Max grid import kWh (max_grid_window only)")
-
-
-class DirectiveOutput(BaseModel):
-    note_index: int = Field(description="0-based index of the operator note")
-    applies: bool = Field(description="True for all directive types except no_op")
-    directive_type: Literal[
-        "solar_reduction",
-        "minimum_battery_reserve",
-        "no_charge_window",
-        "no_discharge_window",
-        "max_grid_window",
-        "no_op",
-    ] = Field(description="One of the six supported directive types")
-    structured_adjustment: Optional[StructuredAdjustment] = Field(
-        description="Shape depends on directive_type; null for no_op"
-    )
-    explanation: str = Field(description="At most 8 words describing the directive")
-
-
-class InterpretationOutput(BaseModel):
-    directive_interpretation: list[DirectiveOutput]
-
-
 # Computed once at import time — embedded as the authoritative schema in the prompt
-_RESPONSE_SCHEMA = json.dumps(InterpretationOutput.model_json_schema(), indent=2)
+_RESPONSE_SCHEMA = json.dumps(Interpretation.model_json_schema(), indent=2)
 
 
 SYSTEM_PROMPT = f"""
@@ -137,17 +102,17 @@ Examples:
 Example 1:
 Input: {{"operator_notes": ["Solar output will drop to about 20% from 1 PM to 3 PM."], "battery_capacity_kwh": 500}}
 Output:
-{{"directive_interpretation": [{{"note_index": 0,"applies": true,"directive_type": "solar_reduction","structured_adjustment": {{"hours": [13, 14],"factor": 0.2,"minimum_energy_kwh": null,"max_grid_kwh": null}},"explanation": "Solar remains at twenty percent"}}]}}
+{{"directive_interpretation": [{{"note_index": 0,"applies": true,"directive_type": "solar_reduction","structured_adjustment": {{"hours": [13, 14],"factor": 0.2}},"explanation": "Solar remains at twenty percent"}}]}}
 
 Example 2:
 Input: {{"operator_notes": ["Do not charge the battery between 2 PM and 4 PM."], "battery_capacity_kwh": 500}}
 Output:
-{{"directive_interpretation": [{{"note_index": 0,"applies": true,"directive_type": "no_charge_window","structured_adjustment": {{"hours": [14, 15],"factor": null,"minimum_energy_kwh": null,"max_grid_kwh": null}},"explanation": "Battery charging disabled 2 to 4 PM"}}]}}
+{{"directive_interpretation": [{{"note_index": 0,"applies": true,"directive_type": "no_charge_window","structured_adjustment": {{"hours": [14, 15]}},"explanation": "Battery charging disabled 2 to 4 PM"}}]}}
 
 Example 3:
 Input: {{"operator_notes": ["Keep at least 120 kWh in reserve from 6 PM until 9 PM."], "battery_capacity_kwh": 400}}
 Output:
-{{"directive_interpretation": [{{"note_index": 0,"applies": true,"directive_type": "minimum_battery_reserve","structured_adjustment": {{"hours": [18, 19, 20],"factor": null,"minimum_energy_kwh": 120.0,"max_grid_kwh": null}},"explanation": "Battery reserve minimum 120 kWh evening"}}]}}
+{{"directive_interpretation": [{{"note_index": 0,"applies": true,"directive_type": "minimum_battery_reserve","structured_adjustment": {{"hours": [18, 19, 20],"minimum_energy_kwh": 120}},"explanation": "Battery reserve minimum 120 kWh evening"}}]}}
 
 Example 4:
 Input: {{"operator_notes": ["The cafeteria menu changes tomorrow."], "battery_capacity_kwh": 500}}
@@ -157,13 +122,12 @@ Output:
 Example 5:
 Input: {{"operator_notes": ["Solar output will drop to about 20% from 1 PM to 3 PM.", "Do not charge the battery between 2 PM and 4 PM.", "The cafeteria menu changes tomorrow."], "battery_capacity_kwh": 500}}
 Output:
-{{"directive_interpretation": [{{"note_index": 0,"applies": true,"directive_type": "solar_reduction","structured_adjustment": {{"hours": [13, 14],"factor": 0.2,"minimum_energy_kwh": null,"max_grid_kwh": null}},"explanation": "Solar remains at twenty percent"}},{{"note_index": 1,"applies": true,"directive_type": "no_charge_window","structured_adjustment": {{"hours": [14, 15],"factor": null,"minimum_energy_kwh": null,"max_grid_kwh": null}},"explanation": "Battery charging disabled 2 to 4 PM"}},{{"note_index": 2,"applies": false,"directive_type": "no_op","structured_adjustment": null,"explanation": "Unrelated to energy scheduling"}}]}}
+{{"directive_interpretation": [{{"note_index": 0,"applies": true,"directive_type": "solar_reduction","structured_adjustment": {{"hours": [13, 14],"factor": 0.2}},"explanation": "Solar remains at twenty percent"}},{{"note_index": 1,"applies": true,"directive_type": "no_charge_window","structured_adjustment": {{"hours": [14, 15]}},"explanation": "Battery charging disabled 2 to 4 PM"}},{{"note_index": 2,"applies": false,"directive_type": "no_op","structured_adjustment": null,"explanation": "Unrelated to energy scheduling"}}]}}
 
 Fallback:
 If a note does not clearly correspond to one of the supported energy directives, return "no_op" with applies=false and structured_adjustment=null.
 Never invent a directive, numerical value, time period, or energy parameter.
 """
-
 
 
 async def build_messages(context: dict) -> list:
@@ -185,11 +149,7 @@ async def groq_call(messages: list) -> dict:
         temperature=0,
         response_format={"type": "json_object"},
     )
-    raw = json.loads(response.choices[0].message.content)
-    # Validate against our Pydantic schema — raises ValueError with a clear
-    # message if the LLM output doesn't match the expected structure.
-    InterpretationOutput.model_validate(raw)
-    return raw
+    return json.loads(response.choices[0].message.content)
 
 
 async def interpret_notes(context: dict, scenario: Scenario) -> list:
@@ -204,7 +164,6 @@ async def interpret_notes(context: dict, scenario: Scenario) -> list:
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             last_error = exc
             if attempt + 1 < GROQ_ATTEMPTS:
-                schema = Interpretation.model_json_schema()
                 messages.append({
                     "role": "assistant",
                     "content": "(previous response was invalid — correcting)",
@@ -213,12 +172,11 @@ async def interpret_notes(context: dict, scenario: Scenario) -> list:
                     "role": "user",
                     "content": (
                         f"Your previous response failed validation: {exc}\n\n"
-                        "Return a corrected JSON object matching this schema:\n"
-                        f"{json.dumps(schema, indent=2)}\n\n"
+                        "Return a corrected JSON object matching the requested schema.\n"
                         "Checklist:\n"
                         "  1. Every note_index present exactly once, ascending from 0.\n"
                         "  2. applies=true for all types except no_op (applies=false).\n"
-                        "  3. structured_adjustment shape matches directive_type exactly.\n"
+                        "  3. structured_adjustment shape matches directive_type exactly (no extra fields permitted).\n"
                         "  4. hours: unique ascending integers in [0, 23].\n"
                         "  5. solar factor = REMAINING fraction (not reduction amount).\n"
                         "  6. explanation is at most 8 words.\n"
